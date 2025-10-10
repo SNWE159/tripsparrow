@@ -1,10 +1,19 @@
-FROM node:20-alpine
+FROM node:18-alpine
 
 WORKDIR /app
 
-COPY package.json package-lock.json* ./
+# Copy package files first for better caching
+COPY package*.json ./
 RUN npm install
 
+# Copy application code
 COPY . .
 
-CMD ["npm", "run", "dev"]
+# Build the application
+RUN npm run build
+
+# Expose port
+EXPOSE 3000
+
+# Start the application
+CMD ["npm", "start"]
