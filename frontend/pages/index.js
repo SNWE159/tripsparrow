@@ -10,7 +10,7 @@ const HomePage = () => {
         // Smooth scrolling for anchor links
         const handleAnchorClick = (e) => {
             const href = e.target.getAttribute('href');
-            if (href?.startsWith('#')) {
+            if (href && href.startsWith('#')) {
                 e.preventDefault();
                 
                 const targetId = href;
@@ -24,7 +24,10 @@ const HomePage = () => {
                     });
                     
                     // Close mobile menu if open
-                    document.querySelector('nav')?.classList.remove('active');
+                    const nav = document.querySelector('nav');
+                    if (nav && nav.classList.contains('active')) {
+                        nav.classList.remove('active');
+                    }
                 }
             }
         };
@@ -46,6 +49,7 @@ const HomePage = () => {
                     mobileMenu.removeEventListener('click', handleMobileMenuClick);
                 };
             }
+            return () => {}; // Return empty cleanup if no setup
         };
 
         // Add event listeners to all anchor links
