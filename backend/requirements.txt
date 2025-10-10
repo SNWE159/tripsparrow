@@ -4,3 +4,7 @@ sqlalchemy
 psycopg2-binary
 supabase
 python-dotenv
+jupyterlab
+numpy
+pandas
+matplotlib
