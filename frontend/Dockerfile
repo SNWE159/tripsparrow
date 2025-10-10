@@ -3,17 +3,15 @@ FROM node:18-alpine
 WORKDIR /app
 
 # Copy package files first for better caching
-COPY package*.json ./
-RUN npm install
+COPY package.json package-lock.json* ./
+RUN npm ci --only=production
 
-# Copy application code
+# Copy source code including .env.local
 COPY . .
 
 # Build the application
 RUN npm run build
 
-# Expose port
 EXPOSE 3000
 
-# Start the application
 CMD ["npm", "start"]
