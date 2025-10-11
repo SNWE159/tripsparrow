@@ -1,5 +1,5 @@
 Privacy Policy for AI Travel Guide
-Last updated: [10/10/2025]
+Last updated: [10/11/2025]
 
 1. Introduction
 Welcome to AI Travel Guide ("we," "our," or "us"). We are committed to protecting your personal information and your right to privacy. If you have any questions or concerns about this privacy policy, or our practices with regards to your personal information, please contact us at [siyathpython@gmail.com].
@@ -107,7 +107,7 @@ If you have questions or comments about this policy, you may contact us by:
 
 Email: [siyathpython@gmail.com]
 
-Website: https://snwe159.github.io/tripsparrow/
+Website: https://snwe159.github.io/tripsparrow
 
 13. How Can You Review, Update, or Delete the Data We Collect From You?
 Based on the applicable laws of your country, you may have the right to request access to the personal information we collect from you, change that information, or delete it. To request to review, update, or delete your personal information, please contact us using the details provided above.
