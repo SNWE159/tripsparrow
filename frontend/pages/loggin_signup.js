@@ -23,6 +23,7 @@ const LoginSignup = () => {
     const router = useRouter();
 
     useEffect(() => {
+        // Check if user is already logged in
         const checkUser = async () => {
             try {
                 setIsCheckingAuth(true);
@@ -35,15 +36,17 @@ const LoginSignup = () => {
 
                 if (session) {
                     console.log('User already logged in, redirecting to dashboard');
+                    // Store user data in localStorage
                     localStorage.setItem('user', JSON.stringify(session.user));
                     localStorage.setItem('isLoggedIn', 'true');
                     localStorage.setItem('sessionExpiry', new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString());
                     
+                    // Ensure profile exists
                     await ensureUserProfile(session.user);
                     router.push('/dashboard');
-                    return;
                 } else {
                     console.log('No active session found');
+                    // Clear any stale localStorage data
                     localStorage.removeItem('user');
                     localStorage.removeItem('isLoggedIn');
                     localStorage.removeItem('sessionExpiry');
@@ -57,6 +60,7 @@ const LoginSignup = () => {
 
         checkUser();
 
+        // Check for redirect parameter
         if (typeof window !== 'undefined') {
             const urlParams = new URLSearchParams(window.location.search);
             const redirect = urlParams.get('redirect');
@@ -66,75 +70,94 @@ const LoginSignup = () => {
         }
     }, [router]);
 
-    // Profile creation function
+    // Profile creation function - FIXED FOR BOTH EMAIL AND GOOGLE OAUTH
     const ensureUserProfile = async (user, userData = null) => {
         try {
+            console.log('Ensuring profile for user:', user);
+            
+            // Extract user data from different sources
             const fullName = userData?.fullname || 
                            user.user_metadata?.full_name || 
-                           user.user_metadata?.name || 
+                           user.user_metadata?.name ||
+                           user.identities?.[0]?.identity_data?.full_name ||
                            'Traveler';
             
             const userName = userData?.username || 
                            user.user_metadata?.username || 
+                           user.identities?.[0]?.identity_data?.preferred_username ||
                            user.email?.split('@')[0] || 
                            `user_${Math.random().toString(36).substr(2, 9)}`;
 
+            const userEmail = user.email || user.identities?.[0]?.identity_data?.email;
+
             const profileData = {
                 id: user.id,
-                email: user.email,
+                email: userEmail,
                 full_name: fullName,
                 username: userName.toLowerCase().replace(/[^a-z0-9_]/g, '_'),
-                updated_at: new Date().toISOString(),
-                avatar_url: user.user_metadata?.avatar_url || null
+                updated_at: new Date().toISOString()
             };
 
-            console.log('Creating/updating profile:', profileData);
+            console.log('Creating/updating profile with data:', profileData);
 
-            const { error: upsertError } = await supabase
+            // Use upsert to handle both insert and update
+            const { data, error: upsertError } = await supabase
                 .from('profiles')
                 .upsert({
                     ...profileData,
                     created_at: new Date().toISOString()
                 }, {
-                    onConflict: 'id'
-                });
+                    onConflict: 'id',
+                    ignoreDuplicates: false
+                })
+                .select();
 
             if (upsertError) {
                 console.error('Profile upsert error:', upsertError);
-                if (upsertError.code === '23505') {
+                
+                // Handle unique constraint violation for username
+                if (upsertError.code === '23505' && upsertError.message.includes('username')) {
+                    console.log('Username already exists, generating unique username');
                     const uniqueUsername = `${userName}_${Math.random().toString(36).substr(2, 4)}`;
                     return await ensureUserProfile(user, { 
                         ...userData, 
                         username: uniqueUsername 
                     });
                 }
-                return false;
+                
+                throw new Error(`Failed to create user profile: ${upsertError.message}`);
             }
 
-            console.log('Profile created/updated successfully');
+            console.log('Profile created/updated successfully:', data);
             return true;
         } catch (error) {
             console.error('Profile creation error:', error);
-            return false;
+            throw error;
         }
     };
 
-    // Listen for auth state changes
+    // Listen for auth state changes - CRITICAL FOR GOOGLE OAUTH
     useEffect(() => {
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
             async (event, session) => {
-                console.log('Auth state changed:', event);
+                console.log('Auth state changed:', event, session);
                 
                 if (event === 'SIGNED_IN' && session) {
-                    console.log('User signed in:', session.user);
+                    console.log('User signed in via:', session.user.app_metadata?.provider);
+                    console.log('User details:', session.user);
                     
                     // Store session data
                     localStorage.setItem('user', JSON.stringify(session.user));
                     localStorage.setItem('isLoggedIn', 'true');
                     localStorage.setItem('sessionExpiry', new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString());
                     
-                    // Ensure profile exists
-                    await ensureUserProfile(session.user);
+                    // Ensure profile exists - THIS IS KEY FOR GOOGLE OAUTH
+                    try {
+                        await ensureUserProfile(session.user);
+                        console.log('Profile ensured after auth state change');
+                    } catch (error) {
+                        console.error('Failed to ensure profile after auth state change:', error);
+                    }
                     
                     // Redirect to dashboard
                     router.push('/dashboard');
@@ -193,10 +216,12 @@ const LoginSignup = () => {
                 [name]: value
             };
             
+            // Check password match using the NEW values
             if (name === 'password' || name === 'confirmPassword') {
                 const password = name === 'password' ? value : newFormData.password;
                 const confirmPassword = name === 'confirmPassword' ? value : newFormData.confirmPassword;
                 
+                // Update password match status
                 if (confirmPassword.length === 0) {
                     setPasswordMatch('');
                 } else if (password === confirmPassword) {
@@ -205,6 +230,7 @@ const LoginSignup = () => {
                     setPasswordMatch({ text: 'Passwords do not match', class: 'strength-weak' });
                 }
                 
+                // Update password strength if password field changed
                 if (name === 'password') {
                     checkPasswordStrength(value);
                 }
@@ -233,15 +259,10 @@ const LoginSignup = () => {
             return false;
         }
         
+        // Email validation
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(email)) {
             showAlert('Please enter a valid email address');
-            return false;
-        }
-        
-        const usernameRegex = /^[a-zA-Z0-9_]+$/;
-        if (!usernameRegex.test(username)) {
-            showAlert('Username can only contain letters, numbers, and underscores');
             return false;
         }
         
@@ -259,7 +280,7 @@ const LoginSignup = () => {
         return true;
     };
 
-    // Sign up with Supabase
+    // Sign up with Supabase - EMAIL/PASSWORD
     const handleSignupSubmit = async (e) => {
         e.preventDefault();
         
@@ -268,6 +289,7 @@ const LoginSignup = () => {
         setLoading(true);
 
         try {
+            // 1. Sign up with Supabase Auth
             const { data: authData, error: authError } = await supabase.auth.signUp({
                 email: formData.email,
                 password: formData.password,
@@ -282,6 +304,8 @@ const LoginSignup = () => {
             if (authError) {
                 if (authError.message.includes('User already registered')) {
                     throw new Error('An account with this email already exists. Please log in instead.');
+                } else if (authError.message.includes('Password')) {
+                    throw new Error('Password does not meet requirements. Please choose a stronger password.');
                 } else {
                     throw authError;
                 }
@@ -290,24 +314,47 @@ const LoginSignup = () => {
             if (authData.user) {
                 console.log('User created:', authData.user);
 
-                await ensureUserProfile(authData.user, {
-                    fullname: formData.fullname,
-                    username: formData.username
-                });
+                // 2. Create profile in profiles table
+                try {
+                    await ensureUserProfile(authData.user, {
+                        fullname: formData.fullname,
+                        username: formData.username
+                    });
+                    console.log('Profile creation completed successfully for email signup');
+                } catch (profileError) {
+                    console.error('Profile creation failed for email signup:', profileError);
+                    // Continue with signup even if profile creation fails initially
+                    // The auth state change listener will retry
+                }
 
+                // 3. Handle auto login after signup
                 if (authData.session) {
+                    // User is immediately logged in (email confirmations disabled)
                     showAlert('Account created successfully! Redirecting to dashboard...', 'success');
+                    
+                    // Store user data with 2-day expiry
                     localStorage.setItem('user', JSON.stringify(authData.user));
                     localStorage.setItem('isLoggedIn', 'true');
                     localStorage.setItem('sessionExpiry', new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString());
                     
+                    // Redirect to dashboard
                     setTimeout(() => {
                         router.push('/dashboard');
                     }, 1500);
                 } else {
+                    // Email confirmation required
                     showAlert('Account created! Please check your email to verify your account.', 'success');
                     setActiveTab('login');
-                    setFormData(prev => ({ ...prev, loginEmail: formData.email }));
+                    setFormData(prev => ({ 
+                        ...prev, 
+                        loginEmail: formData.email,
+                        // Clear the form
+                        fullname: '',
+                        username: '',
+                        email: '',
+                        password: '',
+                        confirmPassword: ''
+                    }));
                 }
             }
         } catch (error) {
@@ -335,18 +382,30 @@ const LoginSignup = () => {
             if (error) {
                 if (error.message.includes('Invalid login credentials')) {
                     throw new Error('Invalid email or password. Please try again.');
+                } else if (error.message.includes('Email not confirmed')) {
+                    throw new Error('Please verify your email address before logging in.');
                 } else {
                     throw error;
                 }
             }
 
             if (data.user) {
+                console.log('User logged in:', data.user);
                 showAlert('Login successful! Redirecting...', 'success');
+                
+                // Store user data with 2-day expiry
                 localStorage.setItem('user', JSON.stringify(data.user));
                 localStorage.setItem('isLoggedIn', 'true');
                 localStorage.setItem('sessionExpiry', new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString());
                 
-                await ensureUserProfile(data.user);
+                // Ensure profile exists in database
+                try {
+                    await ensureUserProfile(data.user);
+                    console.log('Profile ensured after login');
+                } catch (profileError) {
+                    console.error('Profile update error after login:', profileError);
+                    // Continue with login even if profile update fails
+                }
                 
                 setTimeout(() => {
                     router.push('/dashboard');
@@ -360,7 +419,7 @@ const LoginSignup = () => {
         }
     };
 
-    // FIXED Social login handler - Using Supabase's built-in callback
+    // Social login handler - GOOGLE OAUTH
     const handleSocialAuth = async (provider) => {
         try {
             setLoading(true);
@@ -368,37 +427,25 @@ const LoginSignup = () => {
             
             console.log(`Starting ${provider} OAuth...`);
             
-            // Use Supabase's built-in callback URL - NO custom redirect
+            // Use Supabase's built-in OAuth with redirect
             const { data, error } = await supabase.auth.signInWithOAuth({
                 provider: provider.toLowerCase(),
                 options: {
-                    // Let Supabase handle the redirect automatically
+                    redirectTo: `${window.location.origin}/dashboard`,
                     skipBrowserRedirect: false
                 }
             });
 
             if (error) {
                 console.error(`${provider} OAuth error:`, error);
-                
-                // More specific error handling
-                if (error.message?.includes('Invalid app ID') || error.message?.includes('app ID')) {
-                    showAlert('Facebook authentication is not properly configured. Please check your Facebook App ID in Supabase.', 'error');
-                } else if (error.message?.includes('404') || error.message?.includes('not found')) {
-                    showAlert('GitHub authentication is not properly configured. Please check your GitHub OAuth settings in Supabase.', 'error');
-                } else if (error.message?.includes('not enabled') || error.message?.includes('disabled')) {
-                    showAlert(`${provider} authentication is not enabled. Please enable it in Supabase dashboard.`, 'error');
-                } else if (error.message?.includes('configuration')) {
-                    showAlert(`${provider} authentication is not properly configured. Check your OAuth settings in Supabase.`, 'error');
-                } else {
-                    showAlert(`Failed to connect with ${provider}. Please try again or use another method.`, 'error');
-                }
+                showAlert(`Failed to connect with ${provider}. Please try again.`, 'error');
                 return;
             }
 
             console.log(`${provider} OAuth initiated successfully:`, data);
             
-            // Supabase will handle the redirect automatically
-            // The auth state change listener will handle the rest
+            // Note: The auth state change listener will handle the profile creation
+            // and redirect after the OAuth flow completes
             
         } catch (error) {
             console.error(`${provider} OAuth exception:`, error);
@@ -430,6 +477,9 @@ const LoginSignup = () => {
                                 <i className="fas fa-route"></i>
                                 AI Travel Guide
                             </div>
+                        </div>
+                        <div className="mobile-menu">
+                            <i className="fas fa-bars"></i>
                         </div>
                         <nav>
                             <ul>
@@ -487,7 +537,7 @@ const LoginSignup = () => {
 
                         {/* Configuration Help */}
                         <div className="config-help">
-                            <p><strong>Need help?</strong> Make sure Facebook & GitHub OAuth apps are properly configured with your Supabase URL.</p>
+                            <p><strong>Note:</strong> Profiles are automatically created for both email and Google signups.</p>
                         </div>
                         
                         {/* Sign Up Form */}
@@ -593,24 +643,6 @@ const LoginSignup = () => {
                                         <i className="fab fa-google"></i> 
                                         {loading ? 'Connecting...' : 'Google'}
                                     </button>
-                                    <button 
-                                        type="button" 
-                                        className="social-btn facebook" 
-                                        onClick={() => handleSocialAuth('Facebook')}
-                                        disabled={loading}
-                                    >
-                                        <i className="fab fa-facebook-f"></i> 
-                                        {loading ? 'Connecting...' : 'Facebook'}
-                                    </button>
-                                    <button 
-                                        type="button" 
-                                        className="social-btn github" 
-                                        onClick={() => handleSocialAuth('GitHub')}
-                                        disabled={loading}
-                                    >
-                                        <i className="fab fa-github"></i> 
-                                        {loading ? 'Connecting...' : 'GitHub'}
-                                    </button>
                                 </div>
                                 
                                 <div className="auth-switch">
@@ -672,24 +704,6 @@ const LoginSignup = () => {
                                         <i className="fab fa-google"></i> 
                                         {loading ? 'Connecting...' : 'Google'}
                                     </button>
-                                    <button 
-                                        type="button" 
-                                        className="social-btn facebook" 
-                                        onClick={() => handleSocialAuth('Facebook')}
-                                        disabled={loading}
-                                    >
-                                        <i className="fab fa-facebook-f"></i> 
-                                        {loading ? 'Connecting...' : 'Facebook'}
-                                    </button>
-                                    <button 
-                                        type="button" 
-                                        className="social-btn github" 
-                                        onClick={() => handleSocialAuth('GitHub')}
-                                        disabled={loading}
-                                    >
-                                        <i className="fab fa-github"></i> 
-                                        {loading ? 'Connecting...' : 'GitHub'}
-                                    </button>
                                 </div>
                                 
                                 <div className="auth-switch">
@@ -708,6 +722,12 @@ const LoginSignup = () => {
                         <div className="footer-column">
                             <h3>AI Travel Guide</h3>
                             <p>Plan perfect trips with intelligent recommendations tailored just for you.</p>
+                            <div className="social-links">
+                                <a href="#"><i className="fab fa-facebook-f"></i></a>
+                                <a href="#"><i className="fab fa-twitter"></i></a>
+                                <a href="#"><i className="fab fa-instagram"></i></a>
+                                <a href="#"><i className="fab fa-linkedin-in"></i></a>
+                            </div>
                         </div>
                         <div className="footer-column">
                             <h3>Quick Links</h3>
@@ -715,14 +735,24 @@ const LoginSignup = () => {
                                 <li><Link href="/">Home</Link></li>
                                 <li><a href="#features">Features</a></li>
                                 <li><a href="#how-it-works">How It Works</a></li>
+                                <li><a href="#pricing">Pricing</a></li>
                             </ul>
                         </div>
                         <div className="footer-column">
                             <h3>Support</h3>
                             <ul>
+                                <li><a href="#help">Help Center</a></li>
                                 <li><a href="#contact">Contact Us</a></li>
                                 <li><a href="#privacy">Privacy Policy</a></li>
                                 <li><a href="#terms">Terms of Service</a></li>
+                            </ul>
+                        </div>
+                        <div className="footer-column">
+                            <h3>Contact Info</h3>
+                            <ul>
+                                <li><i className="fas fa-envelope"></i> hello@aitravelguide.com</li>
+                                <li><i className="fas fa-phone"></i> +1 (555) 123-4567</li>
+                                <li><i className="fas fa-map-marker-alt"></i> 123 Travel Street, Adventure City</li>
                             </ul>
                         </div>
                     </div>
