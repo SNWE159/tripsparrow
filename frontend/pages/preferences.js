@@ -6,7 +6,6 @@ import Link from 'next/link';
 const Preferences = () => {
     const [formData, setFormData] = useState({
         destination: '',
-        days: 7,
         budget: 2000,
         startDate: '',
         endDate: '',
@@ -19,7 +18,7 @@ const Preferences = () => {
     const router = useRouter();
 
     useEffect(() => {
-        // Set default dates
+        // Set default dates - today as start date, next week as end date
         const today = new Date();
         const nextWeek = new Date();
         nextWeek.setDate(today.getDate() + 7);
@@ -41,6 +40,18 @@ const Preferences = () => {
         }
     }, [router]);
 
+    // Get today's date in YYYY-MM-DD format for date input min attributes
+    const getTodayDate = () => {
+        return new Date().toISOString().split('T')[0];
+    };
+
+    // Get tomorrow's date for end date min attribute
+    const getTomorrowDate = () => {
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        return tomorrow.toISOString().split('T')[0];
+    };
+
     const handleInputChange = (e) => {
         const { name, value, type } = e.target;
         
@@ -60,12 +71,24 @@ const Preferences = () => {
         }
     };
 
-    const handleRangeChange = (e) => {
+    const handleDateChange = (e) => {
         const { name, value } = e.target;
-        setFormData(prev => ({
-            ...prev,
-            [name]: parseInt(value)
-        }));
+        
+        setFormData(prev => {
+            const newFormData = {
+                ...prev,
+                [name]: value
+            };
+            
+            // If start date is changed and it's after the current end date, adjust end date
+            if (name === 'startDate' && value > prev.endDate) {
+                const newEndDate = new Date(value);
+                newEndDate.setDate(newEndDate.getDate() + 7); // Default to 7 days after start
+                newFormData.endDate = newEndDate.toISOString().split('T')[0];
+            }
+            
+            return newFormData;
+        });
     };
 
     const handleSubmit = async (e) => {
@@ -84,6 +107,12 @@ const Preferences = () => {
         
         if (!formData.dietaryRequirements) {
             alert('Please select dietary requirements');
+            return;
+        }
+
+        // Validate dates
+        if (formData.startDate >= formData.endDate) {
+            alert('End date must be after start date');
             return;
         }
 
@@ -204,29 +233,9 @@ const Preferences = () => {
                                 />
                             </div>
 
-                            {/* Trip Duration */}
-                            <div className="form-group">
-                                <label htmlFor="days">How many days?</label>
-                                <div className="range-container">
-                                    <input 
-                                        type="range" 
-                                        id="days" 
-                                        name="days"
-                                        min="1" 
-                                        max="30" 
-                                        value={formData.days} 
-                                        className="form-control"
-                                        onChange={handleRangeChange}
-                                    />
-                                    <div className="range-value">
-                                        <span id="days-value">{formData.days}</span> days
-                                    </div>
-                                </div>
-                            </div>
-
                             {/* Budget */}
                             <div className="form-group">
-                                <label htmlFor="budget">Budget</label>
+                                <label htmlFor="budget">Budget ($)</label>
                                 <div className="budget-container">
                                     <span className="budget-symbol">$</span>
                                     <input 
@@ -235,6 +244,7 @@ const Preferences = () => {
                                         name="budget"
                                         className="form-control budget-input" 
                                         placeholder="2000" 
+                                        min="100"
                                         value={formData.budget}
                                         onChange={handleInputChange}
                                     />
@@ -246,24 +256,32 @@ const Preferences = () => {
                                 <label>Trip Dates</label>
                                 <div className="form-row">
                                     <div className="form-col">
+                                        <label htmlFor="start-date" className="date-label">Start Date</label>
                                         <input 
                                             type="date" 
                                             id="start-date" 
                                             name="startDate"
                                             className="form-control"
                                             value={formData.startDate}
-                                            onChange={handleInputChange}
+                                            onChange={handleDateChange}
+                                            min={getTodayDate()} // Cannot select past dates
+                                            required
                                         />
+                                        <small className="date-help">Cannot select past dates</small>
                                     </div>
                                     <div className="form-col">
+                                        <label htmlFor="end-date" className="date-label">End Date</label>
                                         <input 
                                             type="date" 
                                             id="end-date" 
                                             name="endDate"
                                             className="form-control"
                                             value={formData.endDate}
-                                            onChange={handleInputChange}
+                                            onChange={handleDateChange}
+                                            min={getTomorrowDate()} // Cannot select today or past dates
+                                            required
                                         />
+                                        <small className="date-help">Must be after start date</small>
                                     </div>
                                 </div>
                             </div>
@@ -391,6 +409,24 @@ const Preferences = () => {
                     </div>
                 </div>
             </footer>
+
+            <style jsx>{`
+                .date-label {
+                    display: block;
+                    margin-bottom: 5px;
+                    font-weight: 500;
+                    color: #333;
+                }
+                .date-help {
+                    display: block;
+                    margin-top: 5px;
+                    color: #666;
+                    font-size: 0.8rem;
+                }
+                .form-col {
+                    position: relative;
+                }
+            `}</style>
         </div>
     );
 };
