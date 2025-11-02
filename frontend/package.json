@@ -12,14 +12,18 @@
     "@fortawesome/fontawesome-free": "^7.1.0",
     "@supabase/supabase-js": "^2.74.0",
     "axios": "^1.12.2",
+    "crypto-js": "^4.2.0",
     "leaflet": "^1.9.4",
     "next": "^14.2.32",
+    "nodemailer": "^7.0.10",
+    "openai": "^6.7.0",
     "react": "18.3.1",
     "react-beautiful-dnd": "^13.1.1",
     "react-dom": "18.3.1",
     "react-leaflet": "^4.2.1",
     "react-router-dom": "^7.9.3",
-    "react-split": "^2.0.14"
+    "react-split": "^2.0.14",
+    "resend": "^6.4.0"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.21",
